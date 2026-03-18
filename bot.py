@@ -7,7 +7,7 @@ TOKEN = os.getenv("TOKEN")
 if not TOKEN:
     raise Exception("Bot token is not defined")
 SUPER_ADMIN = 1669340183
-
+print("TOKEN:", TOKEN)
 bot = telebot.TeleBot(TOKEN)
 
 #база
