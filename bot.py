@@ -177,19 +177,24 @@ def handle(message):
                 try:
                     bot.send_message(admin, info)
 
-                    # 1. відправляємо повідомлення
-                    msg = bot.copy_message(
-                        admin,
-                        message.chat.id,
-                        message.message_id
-                    )
+msg = bot.copy_message(
+    admin,
+    message.chat.id,
+    message.message_id
+)
 
-                    # 2. додаємо кнопку з ПРАВИЛЬНИМ ID
-                    markup = InlineKeyboardMarkup()
-                    markup.add(InlineKeyboardButton(
-                        "✅ Взяти в роботу",
-                        callback_data=f"take_{msg.message_id}"
-                    ))
+# кнопка окремим повідомленням
+markup = InlineKeyboardMarkup()
+markup.add(InlineKeyboardButton(
+    "✅ Взяти в роботу",
+    callback_data=f"take_{msg.message_id}"
+))
+
+bot.send_message(
+    admin,
+    "👇 Взяти заявку:",
+    reply_markup=markup
+)
 
                     bot.edit_message_reply_markup(
                         chat_id=admin,
