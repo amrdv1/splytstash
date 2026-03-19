@@ -83,6 +83,7 @@ def take_request(call):
     data = cursor.fetchone()
 
     if not data:
+        bot.answer_callback_query(call.id, "❌ Не знайдено")
         return
 
     status, admin_name = data
@@ -103,6 +104,7 @@ def take_request(call):
     )
     conn.commit()
 
+    # повідомляємо всіх адмінів
     for admin in get_admins():
         try:
             bot.send_message(admin, f"🚧 Заявку взяв: {admin_name}")
@@ -146,7 +148,7 @@ def handle(message):
         if user.id in get_banned():
             return
 
-        # --- АДМІН ---
+        # --- АДМІН ВІДПОВІДАЄ ---
         if user.id in get_admins():
             if message.reply_to_message:
                 msg_id = message.reply_to_message.message_id
@@ -175,34 +177,30 @@ def handle(message):
 
             for admin in get_admins():
                 try:
+                    # інфо
                     bot.send_message(admin, info)
 
-msg = bot.copy_message(
-    admin,
-    message.chat.id,
-    message.message_id
-)
+                    # саме повідомлення
+                    msg = bot.copy_message(
+                        admin,
+                        message.chat.id,
+                        message.message_id
+                    )
 
-# кнопка окремим повідомленням
-markup = InlineKeyboardMarkup()
-markup.add(InlineKeyboardButton(
-    "✅ Взяти в роботу",
-    callback_data=f"take_{msg.message_id}"
-))
+                    # кнопка окремо (СТАБІЛЬНО)
+                    markup = InlineKeyboardMarkup()
+                    markup.add(InlineKeyboardButton(
+                        "✅ Взяти в роботу",
+                        callback_data=f"take_{msg.message_id}"
+                    ))
 
-bot.send_message(
-    admin,
-    "👇 Взяти заявку:",
-    reply_markup=markup
-)
-
-                    bot.edit_message_reply_markup(
-                        chat_id=admin,
-                        message_id=msg.message_id,
+                    bot.send_message(
+                        admin,
+                        "👇 Взяти заявку:",
                         reply_markup=markup
                     )
 
-                    # 3. запис в базу
+                    # запис в базу
                     cursor.execute(
                         "INSERT INTO requests VALUES (?, ?, ?, ?)",
                         (msg.message_id, user.id, "new", None)
