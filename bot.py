@@ -61,20 +61,74 @@ def admin_help(message):
         bot.send_message(
             message.chat.id,
             "👨‍💻 Команди адміна:\n\n"
-            "/admins — список адмінів\n"
-            "/ban ID — забанити\n"
-            "/unban ID — розбанити\n"
-            "/done — завершити заявку (reply)\n"
-            "/adminhelp — цей список"
+            "/addadmin ID\n"
+            "/removeadmin ID\n"
+            "/admins\n"
+            "/ban ID\n"
+            "/unban ID\n"
         )
+
+
+# --- АДМІНИ ---
+@bot.message_handler(commands=['addadmin'])
+def add_admin(message):
+    if message.from_user.id == SUPER_ADMIN:
+        try:
+            new_admin = int(message.text.split()[1])
+            cursor.execute("INSERT INTO admins VALUES (?)", (new_admin,))
+            conn.commit()
+            bot.send_message(message.chat.id, "✅ Адмін доданий")
+        except:
+            bot.send_message(message.chat.id, "❌ /addadmin ID")
+
+
+@bot.message_handler(commands=['removeadmin'])
+def remove_admin(message):
+    if message.from_user.id == SUPER_ADMIN:
+        try:
+            admin_id = int(message.text.split()[1])
+            cursor.execute("DELETE FROM admins WHERE id=?", (admin_id,))
+            conn.commit()
+            bot.send_message(message.chat.id, "❌ Адмін видалений")
+        except:
+            bot.send_message(message.chat.id, "❌ /removeadmin ID")
+
+
+@bot.message_handler(commands=['admins'])
+def admins(message):
+    if message.from_user.id in get_admins():
+        bot.send_message(message.chat.id, "👑\n" + "\n".join(map(str, get_admins())))
+
+
+# --- БАН ---
+@bot.message_handler(commands=['ban'])
+def ban(message):
+    if message.from_user.id in get_admins():
+        try:
+            user_id = int(message.text.split()[1])
+            cursor.execute("INSERT INTO banned VALUES (?)", (user_id,))
+            conn.commit()
+            bot.send_message(message.chat.id, f"🚫 {user_id} забанений")
+        except:
+            bot.send_message(message.chat.id, "❌ /ban ID")
+
+
+@bot.message_handler(commands=['unban'])
+def unban(message):
+    if message.from_user.id in get_admins():
+        try:
+            user_id = int(message.text.split()[1])
+            cursor.execute("DELETE FROM banned WHERE id=?", (user_id,))
+            conn.commit()
+            bot.send_message(message.chat.id, f"✅ {user_id} розбанений")
+        except:
+            bot.send_message(message.chat.id, "❌ /unban ID")
 
 
 # --- КНОПКА ВЗЯТИ ---
 @bot.callback_query_handler(func=lambda call: call.data.startswith("take_"))
 def take_request(call):
-    admin_id = call.from_user.id
-
-    if admin_id not in get_admins():
+    if call.from_user.id not in get_admins():
         return
 
     msg_id = int(call.data.split("_")[1])
@@ -83,60 +137,63 @@ def take_request(call):
     data = cursor.fetchone()
 
     if not data:
-        bot.answer_callback_query(call.id, "❌ Не знайдено")
         return
 
     status, admin_name = data
-
-    if status == "done":
-        bot.answer_callback_query(call.id, "❌ Вже завершено")
-        return
 
     if admin_name:
         bot.answer_callback_query(call.id, f"❌ Вже взяв: {admin_name}")
         return
 
-    admin_name = call.from_user.first_name
+    name = call.from_user.first_name
 
     cursor.execute(
         "UPDATE requests SET status='in_progress', admin_name=? WHERE msg_id=?",
-        (admin_name, msg_id)
+        (name, msg_id)
     )
     conn.commit()
 
-    # повідомляємо всіх адмінів
     for admin in get_admins():
-        try:
-            bot.send_message(admin, f"🚧 Заявку взяв: {admin_name}")
-        except:
-            pass
+        bot.send_message(admin, f"🚧 В роботі: {name}")
 
-    bot.answer_callback_query(call.id, "✅ Ти взяв заявку")
+    # додаємо кнопку завершення
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton(
+        "🏁 Завершити",
+        callback_data=f"done_{msg_id}"
+    ))
+
+    bot.send_message(call.from_user.id, "Ти взяв заявку", reply_markup=markup)
+    bot.answer_callback_query(call.id)
 
 
-# --- DONE ---
-@bot.message_handler(commands=['done'])
-def done(message):
-    if message.from_user.id in get_admins():
-        if message.reply_to_message:
-            msg_id = message.reply_to_message.message_id
+# --- КНОПКА DONE ---
+@bot.callback_query_handler(func=lambda call: call.data.startswith("done_"))
+def done_request(call):
+    if call.from_user.id not in get_admins():
+        return
 
-            cursor.execute("SELECT status FROM requests WHERE msg_id=?", (msg_id,))
-            data = cursor.fetchone()
+    msg_id = int(call.data.split("_")[1])
 
-            if not data:
-                bot.send_message(message.chat.id, "❌ Не знайдено")
-                return
+    cursor.execute("SELECT admin_name FROM requests WHERE msg_id=?", (msg_id,))
+    data = cursor.fetchone()
 
-            if data[0] == "done":
-                bot.send_message(message.chat.id, "⚠️ Вже завершено")
-                return
+    if not data:
+        return
 
-            cursor.execute("UPDATE requests SET status='done' WHERE msg_id=?", (msg_id,))
-            conn.commit()
+    admin_name = data[0]
 
-            for admin in get_admins():
-                bot.send_message(admin, f"🏁 Заявка {msg_id} завершена")
+    if admin_name != call.from_user.first_name:
+        bot.answer_callback_query(call.id, "❌ Не твоя заявка")
+        return
+
+    cursor.execute("UPDATE requests SET status='done' WHERE msg_id=?", (msg_id,))
+    conn.commit()
+
+    for admin in get_admins():
+        bot.send_message(admin, f"🏁 Завершено: {admin_name}")
+
+    bot.answer_callback_query(call.id, "✅ Завершено")
 
 
 # --- ОСНОВА ---
@@ -148,7 +205,6 @@ def handle(message):
         if user.id in get_banned():
             return
 
-        # --- АДМІН ВІДПОВІДАЄ ---
         if user.id in get_admins():
             if message.reply_to_message:
                 msg_id = message.reply_to_message.message_id
@@ -167,7 +223,6 @@ def handle(message):
 
                 bot.copy_message(user_id, message.chat.id, message.message_id)
 
-        # --- КОРИСТУВАЧ ---
         else:
             info = (
                 f"👤 {user.first_name}\n"
@@ -176,39 +231,23 @@ def handle(message):
             )
 
             for admin in get_admins():
-                try:
-                    # інфо
-                    bot.send_message(admin, info)
+                bot.send_message(admin, info)
 
-                    # саме повідомлення
-                    msg = bot.copy_message(
-                        admin,
-                        message.chat.id,
-                        message.message_id
-                    )
+                msg = bot.copy_message(admin, message.chat.id, message.message_id)
 
-                    # кнопка окремо (СТАБІЛЬНО)
-                    markup = InlineKeyboardMarkup()
-                    markup.add(InlineKeyboardButton(
-                        "✅ Взяти в роботу",
-                        callback_data=f"take_{msg.message_id}"
-                    ))
+                markup = InlineKeyboardMarkup()
+                markup.add(InlineKeyboardButton(
+                    "✅ Взяти в роботу",
+                    callback_data=f"take_{msg.message_id}"
+                ))
 
-                    bot.send_message(
-                        admin,
-                        "👇 Взяти заявку:",
-                        reply_markup=markup
-                    )
+                bot.send_message(admin, "👇 Взяти заявку:", reply_markup=markup)
 
-                    # запис в базу
-                    cursor.execute(
-                        "INSERT INTO requests VALUES (?, ?, ?, ?)",
-                        (msg.message_id, user.id, "new", None)
-                    )
-                    conn.commit()
-
-                except:
-                    pass
+                cursor.execute(
+                    "INSERT INTO requests VALUES (?, ?, ?, ?)",
+                    (msg.message_id, user.id, "new", None)
+                )
+                conn.commit()
 
     except Exception as e:
         print("Ошибка:", e)
