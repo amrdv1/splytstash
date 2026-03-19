@@ -43,7 +43,7 @@ def get_banned():
     return {row[0] for row in cursor.fetchall()}
 
 
-# --- ПРИВІТАННЯ ---
+# --- СТАРТ ---
 @bot.message_handler(commands=['start'])
 def start(message):
     if message.from_user.id in get_banned():
@@ -54,7 +54,7 @@ def start(message):
     )
 
 
-# --- HELP ДЛЯ АДМІНІВ ---
+# --- HELP ---
 @bot.message_handler(commands=['adminhelp'])
 def admin_help(message):
     if message.from_user.id in get_admins():
@@ -67,62 +67,6 @@ def admin_help(message):
             "/done — завершити заявку (reply)\n"
             "/adminhelp — цей список"
         )
-
-
-# --- АДМІНИ ---
-@bot.message_handler(commands=['addadmin'])
-def add_admin(message):
-    if message.from_user.id == SUPER_ADMIN:
-        try:
-            new_admin = int(message.text.split()[1])
-            cursor.execute("INSERT INTO admins VALUES (?)", (new_admin,))
-            conn.commit()
-            bot.send_message(message.chat.id, "✅ Адмін доданий")
-        except:
-            bot.send_message(message.chat.id, "❌ /addadmin ID")
-
-
-@bot.message_handler(commands=['removeadmin'])
-def remove_admin(message):
-    if message.from_user.id == SUPER_ADMIN:
-        try:
-            admin_id = int(message.text.split()[1])
-            cursor.execute("DELETE FROM admins WHERE id=?", (admin_id,))
-            conn.commit()
-            bot.send_message(message.chat.id, "❌ Адмін видалений")
-        except:
-            bot.send_message(message.chat.id, "❌ /removeadmin ID")
-
-
-@bot.message_handler(commands=['admins'])
-def admins(message):
-    if message.from_user.id in get_admins():
-        bot.send_message(message.chat.id, "👑\n" + "\n".join(map(str, get_admins())))
-
-
-# --- БАН ---
-@bot.message_handler(commands=['ban'])
-def ban(message):
-    if message.from_user.id in get_admins():
-        try:
-            user_id = int(message.text.split()[1])
-            cursor.execute("INSERT INTO banned VALUES (?)", (user_id,))
-            conn.commit()
-            bot.send_message(message.chat.id, f"🚫 {user_id} забанений")
-        except:
-            bot.send_message(message.chat.id, "❌ /ban ID")
-
-
-@bot.message_handler(commands=['unban'])
-def unban(message):
-    if message.from_user.id in get_admins():
-        try:
-            user_id = int(message.text.split()[1])
-            cursor.execute("DELETE FROM banned WHERE id=?", (user_id,))
-            conn.commit()
-            bot.send_message(message.chat.id, f"✅ {user_id} розбанений")
-        except:
-            bot.send_message(message.chat.id, "❌ /unban ID")
 
 
 # --- КНОПКА ВЗЯТИ ---
@@ -202,7 +146,7 @@ def handle(message):
         if user.id in get_banned():
             return
 
-        # --- АДМІН ВІДПОВІДАЄ ---
+        # --- АДМІН ---
         if user.id in get_admins():
             if message.reply_to_message:
                 msg_id = message.reply_to_message.message_id
@@ -233,19 +177,27 @@ def handle(message):
                 try:
                     bot.send_message(admin, info)
 
-                    markup = InlineKeyboardMarkup()
-                    markup.add(InlineKeyboardButton(
-                        "✅ Взяти в роботу",
-                        callback_data=f"take_{message.message_id}"
-                    ))
-
+                    # 1. відправляємо повідомлення
                     msg = bot.copy_message(
                         admin,
                         message.chat.id,
-                        message.message_id,
+                        message.message_id
+                    )
+
+                    # 2. додаємо кнопку з ПРАВИЛЬНИМ ID
+                    markup = InlineKeyboardMarkup()
+                    markup.add(InlineKeyboardButton(
+                        "✅ Взяти в роботу",
+                        callback_data=f"take_{msg.message_id}"
+                    ))
+
+                    bot.edit_message_reply_markup(
+                        chat_id=admin,
+                        message_id=msg.message_id,
                         reply_markup=markup
                     )
 
+                    # 3. запис в базу
                     cursor.execute(
                         "INSERT INTO requests VALUES (?, ?, ?, ?)",
                         (msg.message_id, user.id, "new", None)
